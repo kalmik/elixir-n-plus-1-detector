@@ -1,0 +1,32 @@
+# Build artifacts
+/_build/
+/cover/
+/deps/
+/doc/
+/tmp/
+
+# Dialyzer
+/priv/plts/
+*.plt
+*.plt.hash
+
+# Test coverage
+/cover/
+excoveralls.json
+
+# Hex package tarball
+*.ez
+n_plus_one_detector-*.tar
+
+# Erlang crash dumps
+erl_crash.dump
+
+# Editor and IDE
+.elixir_ls/
+.lexical/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
