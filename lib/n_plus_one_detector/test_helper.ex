@@ -74,8 +74,13 @@ defmodule NPlusOneDetector.TestHelper do
   end
 
   defp compute_changed_lines(base) do
+    # In CI, N_PLUS_ONE_BASE_SHA is set to github.event.pull_request.base.sha,
+    # which gives the exact base commit without needing merge-base computation.
+    # This avoids the three-dot diff failing on shallow clones.
+    base_ref = System.get_env("N_PLUS_ONE_BASE_SHA") || base
+
     # credo:disable-for-this-file Credo.Check.Warning.UnsafeExec
-    case System.cmd("git", ["diff", "--unified=0", "#{base}...HEAD"],
+    case System.cmd("git", ["diff", "--unified=0", "#{base_ref}...HEAD"],
            env: [],
            stderr_to_stdout: true
          ) do
