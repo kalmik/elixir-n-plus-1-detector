@@ -74,16 +74,22 @@ defmodule NPlusOneDetector.TestHelper do
   end
 
   defp compute_changed_lines(base) do
-    # In CI, N_PLUS_ONE_BASE_SHA is set to github.event.pull_request.base.sha,
-    # which gives the exact base commit without needing merge-base computation.
-    # This avoids the three-dot diff failing on shallow clones.
-    base_ref = System.get_env("N_PLUS_ONE_BASE_SHA") || base
+    # When N_PLUS_ONE_BASE_SHA is set (CI), we have an exact commit SHA fetched
+    # with --depth=1. Use two-dot diff to avoid merge-base computation, which
+    # requires walking the commit graph and fails on shallow clones.
+    # For local dev with a branch name, three-dot correctly finds the fork point.
+    case System.get_env("N_PLUS_ONE_BASE_SHA") do
+      nil ->
+        run_diff("#{base}...HEAD")
 
-    # credo:disable-for-this-file Credo.Check.Warning.UnsafeExec
-    case System.cmd("git", ["diff", "--unified=0", "#{base_ref}...HEAD"],
-           env: [],
-           stderr_to_stdout: true
-         ) do
+      sha ->
+        run_diff("#{sha}..HEAD")
+    end
+  end
+
+  # credo:disable-for-next-line Credo.Check.Warning.UnsafeExec
+  defp run_diff(range) do
+    case System.cmd("git", ["diff", "--unified=0", range], env: [], stderr_to_stdout: true) do
       {output, 0} -> parse_diff(output)
       _ -> %{}
     end

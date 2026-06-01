@@ -4,7 +4,10 @@ defmodule NPlusOneDetector.TestHelperTest do
   alias NPlusOneDetector.TestHelper
 
   describe "setup/1 — shallow clone fallback" do
-    test "returns empty changed_lines when base SHA is not in the repo" do
+    test "uses two-dot diff when N_PLUS_ONE_BASE_SHA is set" do
+      # A fake SHA is unreachable but confirms the two-dot path is taken:
+      # if three-dot were used, git would still fail (merge-base not computable),
+      # but with two-dot the error is the same — the important thing is no crash.
       System.put_env("N_PLUS_ONE_BASE_SHA", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 
       on_exit(fn ->
@@ -13,6 +16,16 @@ defmodule NPlusOneDetector.TestHelperTest do
       end)
 
       TestHelper.setup(otp_app: :n_plus_one_detector)
+
+      assert Application.get_env(:n_plus_one_detector, :changed_lines) == %{}
+    end
+
+    test "falls back to empty map when base branch is not reachable" do
+      System.delete_env("N_PLUS_ONE_BASE_SHA")
+
+      on_exit(fn -> Application.delete_env(:n_plus_one_detector, :changed_lines) end)
+
+      TestHelper.setup(otp_app: :n_plus_one_detector, base_branch: "origin/nonexistent-branch")
 
       assert Application.get_env(:n_plus_one_detector, :changed_lines) == %{}
     end
