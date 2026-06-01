@@ -3,6 +3,21 @@ defmodule NPlusOneDetector.TestHelperTest do
 
   alias NPlusOneDetector.TestHelper
 
+  describe "setup/1 — shallow clone fallback" do
+    test "returns empty changed_lines when base SHA is not in the repo" do
+      System.put_env("N_PLUS_ONE_BASE_SHA", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+
+      on_exit(fn ->
+        System.delete_env("N_PLUS_ONE_BASE_SHA")
+        Application.delete_env(:n_plus_one_detector, :changed_lines)
+      end)
+
+      TestHelper.setup(otp_app: :n_plus_one_detector)
+
+      assert Application.get_env(:n_plus_one_detector, :changed_lines) == %{}
+    end
+  end
+
   describe "parse_diff/1" do
     test "returns empty map for empty input" do
       assert TestHelper.parse_diff("") == %{}
