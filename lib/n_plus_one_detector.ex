@@ -145,9 +145,12 @@ defmodule NPlusOneDetector do
   end
 
   defp extract_frames(trace, otp_app) do
-    ~r/\(#{otp_app}[^)]+\) ([^:]+):(\d+):/
+    # Capture the function name to exclude `prepare_query` frames — they are
+    # always in the stacktrace as the hook point, never the N+1 source.
+    ~r/\(#{otp_app}[^)]+\) ([^:]+):(\d+): ([^\n]+)/
     |> Regex.scan(trace)
-    |> Enum.map(fn [_, file, line] -> {file, String.to_integer(line)} end)
+    |> Enum.reject(fn [_, _file, _line, fun] -> String.contains?(fun, "prepare_query") end)
+    |> Enum.map(fn [_, file, line, _fun] -> {file, String.to_integer(line)} end)
   end
 
   defp capture_stacktrace(otp_app) do
