@@ -132,6 +132,20 @@ defmodule NPlusOneDetectorTest do
 
       assert log =~ "[N+1 Detector] 3x `all` on `gadgets`"
     end
+
+    test "shared DB callsite reached via independent operations does not accumulate" do
+      # Simulates a common false-positive: a shared DB helper (shared_db_callsite)
+      # called by three independent top-level operations. Each operation adds
+      # a distinct frame to the chain, producing different hashes.
+      log =
+        capture_log(fn ->
+          operation_one()
+          operation_two()
+          operation_three()
+        end)
+
+      refute log =~ "N+1 Detector"
+    end
   end
 
   describe "track/3 — cap" do
@@ -216,10 +230,18 @@ defmodule NPlusOneDetectorTest do
     end
   end
 
-  # Each helper lives on its own line → distinct trigger frame → distinct fingerprint.
+  # Each helper lives on its own line → distinct call chain hash → distinct fingerprint.
   defp track_gizmos_a, do: NPlusOneDetector.track(:all, from(r in "gizmos"), @otp_app)
   defp track_gizmos_b, do: NPlusOneDetector.track(:all, from(r in "gizmos"), @otp_app)
   defp track_gizmos_c, do: NPlusOneDetector.track(:all, from(r in "gizmos"), @otp_app)
+
+  # Simulates a shared "DB callsite" helper reached via three independent
+  # "operation" helpers. The full call chains differ because each operation
+  # helper is at a distinct line, so their hashes are distinct.
+  defp shared_db_callsite, do: NPlusOneDetector.track(:all, from(r in "widgets"), @otp_app)
+  defp operation_one, do: shared_db_callsite()
+  defp operation_two, do: shared_db_callsite()
+  defp operation_three, do: shared_db_callsite()
 
   describe "NPlusOneDetector.TestHelper.parse_diff/1" do
     test "empty diff returns empty map" do
