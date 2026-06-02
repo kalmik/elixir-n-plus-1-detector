@@ -168,11 +168,10 @@ defmodule NPlusOneDetector do
   # value — so two queries with the same shape but different param values produce
   # the same fingerprint without any normalization.
   #
-  # The full app-level call chain hash is included so that independent top-level
-  # operations that route through the same DB callsite get separate counters.
-  # A real N+1 loop produces an identical chain on every iteration, so it
-  # accumulates and fires. Independent operations have different chains (the
-  # caller frame differs), so they stay isolated.
+  # The first app callsite is included so that independent code paths that happen
+  # to share the same query shape (e.g. two different functions both querying the
+  # same table) get separate counters. A real N+1 loop always enters the DB from
+  # the same callsite on every iteration, so its counter still accumulates.
   defp fingerprint(operation, query, otp_app) do
     {
       operation,
@@ -183,15 +182,12 @@ defmodule NPlusOneDetector do
     }
   end
 
-  # Reads the raw stacktrace (no string formatting), filters to frames belonging
-  # to otp_app (skipping the detector itself and the prepare_query hook), maps
-  # to {file, line} pairs, and hashes the whole list. Two calls with identical
-  # app-level chains produce the same hash; calls from different callers do not.
+  # Reads the raw stacktrace (no string formatting) and returns the {file, line}
+  # of the first frame belonging to otp_app, skipping the detector's own frames
+  # and the Repo.prepare_query hook frame.
   #
   # Module membership is determined by prefix-matching the atom string against
   # the CamelCase equivalent of otp_app (e.g. :my_app → "Elixir.MyApp").
-  # This mirrors how capture_stacktrace/1 identifies app frames from formatted
-  # output, but works directly on the raw stacktrace without string formatting.
   defp callchain_hash(otp_app) do
     prefix = "Elixir." <> (otp_app |> Atom.to_string() |> Macro.camelize())
 
@@ -199,13 +195,11 @@ defmodule NPlusOneDetector do
     |> Process.info(:current_stacktrace)
     |> elem(1)
     |> Enum.drop_while(fn {mod, _fun, _arity, _loc} -> mod == __MODULE__ end)
-    |> Enum.filter(fn {mod, fun, _arity, _loc} ->
-      Atom.to_string(mod) |> String.starts_with?(prefix) and fun != :prepare_query
+    |> Enum.find_value(nil, fn {mod, fun, _arity, location} ->
+      if Atom.to_string(mod) |> String.starts_with?(prefix) and fun != :prepare_query do
+        {Keyword.get(location, :file, ""), Keyword.get(location, :line, 0)}
+      end
     end)
-    |> Enum.map(fn {_mod, _fun, _arity, location} ->
-      {Keyword.get(location, :file, ""), Keyword.get(location, :line, 0)}
-    end)
-    |> :erlang.phash2()
   end
 
   defp source_name(%{from: %{source: {table, _}}}), do: table
