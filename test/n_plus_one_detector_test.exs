@@ -108,6 +108,32 @@ defmodule NPlusOneDetectorTest do
     end
   end
 
+  describe "track/3 — callsite fingerprinting" do
+    # Anonymous fn frames in BEAM report a fixed location regardless of which line
+    # within the fn is executing, so we cannot use inline sequential calls to
+    # demonstrate callsite isolation. Instead, each call goes through a distinct
+    # named private function — named functions carry individual line numbers.
+    test "same query from different named callsites does not accumulate" do
+      log =
+        capture_log(fn ->
+          track_gizmos_a()
+          track_gizmos_b()
+          track_gizmos_c()
+        end)
+
+      refute log =~ "N+1 Detector"
+    end
+
+    test "same query from the same callsite (loop) still accumulates" do
+      log =
+        capture_log(fn ->
+          for _ <- 1..3, do: NPlusOneDetector.track(:all, query("gadgets"), @otp_app)
+        end)
+
+      assert log =~ "[N+1 Detector] 3x `all` on `gadgets`"
+    end
+  end
+
   describe "track/3 — cap" do
     test "stops updating the counter above cap" do
       Application.put_env(:n_plus_one_detector, :cap_multiplier, 2)
@@ -189,6 +215,11 @@ defmodule NPlusOneDetectorTest do
       end
     end
   end
+
+  # Each helper lives on its own line → distinct trigger frame → distinct fingerprint.
+  defp track_gizmos_a, do: NPlusOneDetector.track(:all, from(r in "gizmos"), @otp_app)
+  defp track_gizmos_b, do: NPlusOneDetector.track(:all, from(r in "gizmos"), @otp_app)
+  defp track_gizmos_c, do: NPlusOneDetector.track(:all, from(r in "gizmos"), @otp_app)
 
   describe "NPlusOneDetector.TestHelper.parse_diff/1" do
     test "empty diff returns empty map" do

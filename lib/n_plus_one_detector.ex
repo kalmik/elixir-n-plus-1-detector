@@ -61,7 +61,7 @@ defmodule NPlusOneDetector do
     cap = threshold * multiplier
 
     source = source_name(query)
-    key = fingerprint(operation, query)
+    key = fingerprint(operation, query, otp_app)
     tracker = Process.get(@process_key, %{})
     entry = Map.get(tracker, key, %{count: 0})
     count = entry.count + 1
@@ -167,13 +167,34 @@ defmodule NPlusOneDetector do
   # Ecto represents params as {:^, [], [index]} in the AST — the index, not the
   # value — so two queries with the same shape but different param values produce
   # the same fingerprint without any normalization.
-  defp fingerprint(operation, query) do
+  #
+  # The trigger frame (first app callsite) is included so that independent calls
+  # through the same query path from different callsites get separate counters.
+  # This prevents false positives where the same DB function is called N times
+  # for N independent operations rather than N items in a loop.
+  defp fingerprint(operation, query, otp_app) do
     {
       operation,
       query.from,
       Enum.map(query.wheres, & &1.expr),
-      Enum.map(query.joins, &{&1.qual, &1.on.expr})
+      Enum.map(query.joins, &{&1.qual, &1.on.expr}),
+      trigger_frame_for_fingerprint(otp_app)
     }
+  end
+
+  # Reads the raw stacktrace (cheap — no string formatting) and returns the
+  # {file, line} of the first frame belonging to otp_app after skipping the
+  # detector's own frames and the Repo.prepare_query hook frame.
+  defp trigger_frame_for_fingerprint(otp_app) do
+    self()
+    |> Process.info(:current_stacktrace)
+    |> elem(1)
+    |> Enum.drop_while(fn {mod, _fun, _arity, _loc} -> mod == __MODULE__ end)
+    |> Enum.find_value(nil, fn {mod, fun, _arity, location} ->
+      if Application.get_application(mod) == otp_app and fun != :prepare_query do
+        {Keyword.get(location, :file, ""), Keyword.get(location, :line, 0)}
+      end
+    end)
   end
 
   defp source_name(%{from: %{source: {table, _}}}), do: table
